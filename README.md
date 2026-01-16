@@ -19,6 +19,7 @@
 ## The Problem
 
 When you tell Claude Code or Cursor to "search through my local documentation", here's what happens:
+
 - **Massive token consumption**: Searching through documentation means reading multiple files repeatedly
 - **Inaccurate retrieval**: Searches for keywords, misses context and connections between docs
 - **Hallucinations**: When it can't find something, it invents plausible-sounding APIs
@@ -38,12 +39,12 @@ Your Task → Local Agent asks NotebookLM → Gemini synthesizes answer → Agen
 
 ## Why NotebookLM, Not Local RAG?
 
-| Approach | Token Cost | Setup Time | Hallucinations | Answer Quality |
-|----------|------------|------------|----------------|----------------|
-| **Feed docs to Claude** | 🔴 Very high (multiple file reads) | Instant | Yes - fills gaps | Variable retrieval |
-| **Web search** | 🟡 Medium | Instant | High - unreliable sources | Hit or miss |
-| **Local RAG** | 🟡 Medium-High | Hours (embeddings, chunking) | Medium - retrieval gaps | Depends on setup |
-| **NotebookLM MCP** | 🟢 Minimal | 5 minutes | **Zero** - refuses if unknown | Expert synthesis |
+| Approach                | Token Cost                         | Setup Time                   | Hallucinations                | Answer Quality     |
+| ----------------------- | ---------------------------------- | ---------------------------- | ----------------------------- | ------------------ |
+| **Feed docs to Claude** | 🔴 Very high (multiple file reads) | Instant                      | Yes - fills gaps              | Variable retrieval |
+| **Web search**          | 🟡 Medium                          | Instant                      | High - unreliable sources     | Hit or miss        |
+| **Local RAG**           | 🟡 Medium-High                     | Hours (embeddings, chunking) | Medium - retrieval gaps       | Depends on setup   |
+| **NotebookLM MCP**      | 🟢 Minimal                         | 5 minutes                    | **Zero** - refuses if unknown | Expert synthesis   |
 
 ### What Makes NotebookLM Superior?
 
@@ -58,11 +59,13 @@ Your Task → Local Agent asks NotebookLM → Gemini synthesizes answer → Agen
 ## Installation
 
 ### Claude Code
+
 ```bash
 claude mcp add notebooklm npx notebooklm-mcp@latest
 ```
 
 ### Codex
+
 ```bash
 codex mcp add notebooklm -- npx notebooklm-mcp@latest
 ```
@@ -73,12 +76,14 @@ codex mcp add notebooklm -- npx notebooklm-mcp@latest
 ```bash
 gemini mcp add notebooklm npx notebooklm-mcp@latest
 ```
+
 </details>
 
 <details>
 <summary>Cursor</summary>
 
 Add to `~/.cursor/mcp.json`:
+
 ```json
 {
   "mcpServers": {
@@ -89,6 +94,7 @@ Add to `~/.cursor/mcp.json`:
   }
 }
 ```
+
 </details>
 
 <details>
@@ -97,6 +103,7 @@ Add to `~/.cursor/mcp.json`:
 ```bash
 amp mcp add notebooklm -- npx notebooklm-mcp@latest
 ```
+
 </details>
 
 <details>
@@ -105,12 +112,14 @@ amp mcp add notebooklm -- npx notebooklm-mcp@latest
 ```bash
 code --add-mcp '{"name":"notebooklm","command":"npx","args":["notebooklm-mcp@latest"]}'
 ```
+
 </details>
 
 <details>
 <summary>Other MCP clients</summary>
 
 **Generic MCP config:**
+
 ```json
 {
   "mcpServers": {
@@ -121,6 +130,7 @@ code --add-mcp '{"name":"notebooklm","command":"npx","args":["notebooklm-mcp@lat
   }
 }
 ```
+
 </details>
 
 ---
@@ -132,6 +142,7 @@ code --add-mcp '{"name":"notebooklm","command":"npx","args":["notebooklm-mcp@lat
 **[NotebookLM Claude Code Skill](https://github.com/PleasePrompto/notebooklm-skill)** - Clone to `~/.claude/skills` and start using immediately
 
 **Key differences:**
+
 - **MCP Server** (this repo): Persistent sessions, works with Claude Code, Codex, Cursor, and other MCP clients
 - **Claude Code Skill**: Simpler setup, Python-based, stateless queries, works only with local Claude Code
 
@@ -146,13 +157,17 @@ Both use the same browser automation technology and provide zero-hallucination a
 ### 2. Authenticate (one-time)
 
 Say in your chat (Claude/Codex):
+
 ```
 "Log me in to NotebookLM"
 ```
-*A Chrome window opens → log in with Google*
+
+_A Chrome window opens → log in with Google_
 
 ### 3. Create your knowledge base
+
 Go to [notebooklm.google.com](https://notebooklm.google.com) → Create notebook → Upload your docs:
+
 - 📄 PDFs, Google Docs, markdown files
 - 🔗 Websites, GitHub repos
 - 🎥 YouTube videos
@@ -161,6 +176,7 @@ Go to [notebooklm.google.com](https://notebooklm.google.com) → Create notebook
 Share: **⚙️ Share → Anyone with link → Copy**
 
 ### 4. Let Claude use it
+
 ```
 "I'm building with [library]. Here's my NotebookLM: [link]"
 ```
@@ -176,9 +192,10 @@ Share: **⚙️ Share → Anyone with link → Copy**
 **Challenge**: n8n's API is new — Claude hallucinates node names and functions.
 
 **Solution**:
+
 1. Downloaded complete n8n documentation → merged into manageable chunks
 2. Uploaded to NotebookLM
-3. Told Claude: *"Build me a Gmail spam filter workflow. Use this NotebookLM: [link]"*
+3. Told Claude: _"Build me a Gmail spam filter workflow. Use this NotebookLM: [link]"_
 
 **Watch the AI-to-AI conversation:**
 
@@ -205,26 +222,33 @@ Claude → ✅ "Here's your complete workflow JSON..."
 ## Core Features
 
 ### **Zero Hallucinations**
+
 NotebookLM refuses to answer if information isn't in your docs. No invented APIs.
 
 ### **Autonomous Research**
+
 Claude asks follow-up questions automatically, building complete understanding before coding.
 
 ### **Smart Library Management**
+
 Save NotebookLM links with tags and descriptions. Claude auto-selects the right notebook for your task.
+
 ```
 "Add [link] to library tagged 'frontend, react, components'"
 ```
 
 ### **Deep, Iterative Research**
+
 - Claude automatically asks follow-up questions to build complete understanding
 - Each answer triggers deeper questions until Claude has all the details
 - Example: For n8n workflow, Claude asked multiple sequential questions about Gmail integration, error handling, and data transformation
 
 ### **Cross-Tool Sharing**
+
 Set up once, use everywhere. Claude Code, Codex, Cursor — all share the same library.
 
 ### **Deep Cleanup Tool**
+
 Fresh start anytime. Scans entire system for NotebookLM data with categorized preview.
 
 ---
@@ -235,11 +259,11 @@ Reduce token usage by loading only the tools you need. Each tool consumes contex
 
 ### Available Profiles
 
-| Profile | Tools | Use Case |
-|---------|-------|----------|
-| **minimal** | 5 | Query-only: `ask_question`, `get_health`, `list_notebooks`, `select_notebook`, `get_notebook` |
-| **standard** | 10 | + Library management: `setup_auth`, `list_sessions`, `add_notebook`, `update_notebook`, `search_notebooks` |
-| **full** | 16 | All tools including `cleanup_data`, `re_auth`, `remove_notebook`, `reset_session`, `close_session`, `get_library_stats` |
+| Profile      | Tools | Use Case                                                                                                                |
+| ------------ | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| **minimal**  | 5     | Query-only: `ask_question`, `get_health`, `list_notebooks`, `select_notebook`, `get_notebook`                           |
+| **standard** | 10    | + Library management: `setup_auth`, `list_sessions`, `add_notebook`, `update_notebook`, `search_notebooks`              |
+| **full**     | 16    | All tools including `cleanup_data`, `re_auth`, `remove_notebook`, `reset_session`, `close_session`, `get_library_stats` |
 
 ### Configure via CLI
 
@@ -295,37 +319,40 @@ graph LR
 
 ## Common Commands
 
-| Intent | Say | Result |
-|--------|-----|--------|
-| Authenticate | *"Open NotebookLM auth setup"* or *"Log me in to NotebookLM"* | Chrome opens for login |
-| Add notebook | *"Add [link] to library"* | Saves notebook with metadata |
-| List notebooks | *"Show our notebooks"* | Lists all saved notebooks |
-| Research first | *"Research this in NotebookLM before coding"* | Multi-question session |
-| Select notebook | *"Use the React notebook"* | Sets active notebook |
-| Update notebook | *"Update notebook tags"* | Modify metadata |
-| Remove notebook | *"Remove [notebook] from library"* | Deletes from library |
-| View browser | *"Show me the browser"* | Watch live NotebookLM chat |
-| Fix auth | *"Repair NotebookLM authentication"* | Clears and re-authenticates |
-| Switch account | *"Re-authenticate with different Google account"* | Changes account |
-| Clean restart | *"Run NotebookLM cleanup"* | Removes all data for fresh start |
-| Keep library | *"Cleanup but keep my library"* | Preserves notebooks |
-| Delete all data | *"Delete all NotebookLM data"* | Complete removal |
+| Intent          | Say                                                           | Result                           |
+| --------------- | ------------------------------------------------------------- | -------------------------------- |
+| Authenticate    | _"Open NotebookLM auth setup"_ or _"Log me in to NotebookLM"_ | Chrome opens for login           |
+| Add notebook    | _"Add [link] to library"_                                     | Saves notebook with metadata     |
+| List notebooks  | _"Show our notebooks"_                                        | Lists all saved notebooks        |
+| Research first  | _"Research this in NotebookLM before coding"_                 | Multi-question session           |
+| Select notebook | _"Use the React notebook"_                                    | Sets active notebook             |
+| Update notebook | _"Update notebook tags"_                                      | Modify metadata                  |
+| Remove notebook | _"Remove [notebook] from library"_                            | Deletes from library             |
+| View browser    | _"Show me the browser"_                                       | Watch live NotebookLM chat       |
+| Fix auth        | _"Repair NotebookLM authentication"_                          | Clears and re-authenticates      |
+| Switch account  | _"Re-authenticate with different Google account"_             | Changes account                  |
+| Clean restart   | _"Run NotebookLM cleanup"_                                    | Removes all data for fresh start |
+| Keep library    | _"Cleanup but keep my library"_                               | Preserves notebooks              |
+| Delete all data | _"Delete all NotebookLM data"_                                | Complete removal                 |
 
 ---
 
 ## Comparison to Alternatives
 
 ### vs. Downloading docs locally
+
 - **You**: Download docs → Claude: "search through these files"
 - **Problem**: Claude reads thousands of files → massive token usage, often misses connections
 - **NotebookLM**: Pre-indexed by Gemini, semantic understanding across all docs
 
 ### vs. Web search
+
 - **You**: "Research X online"
 - **Problem**: Outdated info, hallucinated examples, unreliable sources
 - **NotebookLM**: Only your trusted docs, always current, with citations
 
 ### vs. Local RAG setup
+
 - **You**: Set up embeddings, vector DB, chunking strategy, retrieval pipeline
 - **Problem**: Hours of setup, tuning retrieval, still gets "creative" with gaps
 - **NotebookLM**: Upload docs → done. Google handles everything.
@@ -344,7 +371,7 @@ Free tier has daily query limits per Google account. Quick account switching sup
 Chrome runs locally. Your credentials never leave your machine. Use a dedicated Google account if concerned.
 
 **Can I see what's happening?**
-Yes! Say *"Show me the browser"* to watch the live NotebookLM conversation.
+Yes! Say _"Show me the browser"_ to watch the live NotebookLM conversation.
 
 **What makes this better than Claude's built-in knowledge?**
 Your docs are always current. No training cutoff. No hallucinations. Perfect for new libraries, internal APIs, or fast-moving projects.
@@ -353,6 +380,7 @@ Your docs are always current. No training cutoff. No hallucinations. Perfect for
 
 ## Advanced Usage
 
+- 📥 [**Installation Guide**](./docs/installation.md) — Detailed setup instructions
 - 📖 [**Usage Guide**](./docs/usage-guide.md) — Patterns, workflows, tips
 - 🛠️ [**Tool Reference**](./docs/tools.md) — Complete MCP API
 - 🔧 [**Configuration**](./docs/configuration.md) — Environment variables
@@ -384,6 +412,7 @@ While I've built in humanization features (realistic typing speeds, natural dela
 
 **About CLI tools and AI agents:**
 CLI tools like Claude Code, Codex, and similar AI-powered assistants are incredibly powerful, but they can make mistakes. Please use them with care and awareness:
+
 - Always review changes before committing or deploying
 - Test in safe environments first
 - Keep backups of important work

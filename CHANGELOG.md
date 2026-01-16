@@ -5,9 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Configuration Validation System** - Runtime validation with Zod schema
+  - Type-safe configuration with compile-time and runtime validation
+  - Range constraints for numeric values (min/max bounds)
+  - Logical constraints (e.g., `typingWpmMin <= typingWpmMax`)
+  - Clear error messages for invalid configurations
+  - Health check warnings for non-optimal values
+
+- **Safe Parser Functions** - Type-safe environment variable parsing
+  - `parseBooleanEnv()` - Validates boolean strings (true/false/1/0)
+  - `parseIntegerEnv()` - Validates integers with min/max bounds
+  - `parseArrayEnv()` - Parses comma-separated values
+  - `parseProfileStrategy()` - Validates profile strategy enum
+  - `parseUrlEnv()` - Validates URL format
+  - `parseEmailEnv()` - Validates email format
+  - `parsePositiveIntegerEnv()` - Ensures values > 0
+  - `parseNonNegativeIntegerEnv()` - Ensures values >= 0
+
+- **Health Check Validation** - Configuration diagnostics at startup
+  - Validates all configuration values on server startup
+  - Warns about non-optimal values (e.g., `maxSessions > 50`)
+  - Provides actionable error messages with field paths
+  - Graceful fallback to safe defaults for invalid values
+
+- **Comprehensive Test Suite** - 119 new tests for configuration system
+  - `tests/unit/config/schema.test.ts` - Zod schema validation tests (42 tests)
+  - `tests/unit/config/parsers.test.ts` - Parser function tests (50 tests)
+  - `tests/unit/config/validator.test.ts` - Health check tests (27 tests)
+
+- **Installation Documentation** - Complete setup guide
+  - Per-client installation instructions (Claude Code, Codex, Cursor, etc.)
+  - Authentication setup and troubleshooting
+  - Verification steps
+  - Uninstallation and upgrade procedures
+
+### Changed
+
+- **Removed `as any` Type Coercion** - Improved type safety
+  - `profileStrategy` now uses `parseProfileStrategy()` instead of `as any`
+  - All environment variable parsing is type-safe with proper validation
+  - Zero type assertions remaining in configuration code
+
+- **Email Validation** - Proper handling of empty strings
+  - Empty string is now valid for optional email fields
+  - Invalid email format (e.g., `user@`, `@example.com`) falls back to default
+
+- **Modular Configuration** - Split into focused modules
+  - `src/config/schema.ts` - Zod schema definitions
+  - `src/config/parsers.ts` - Safe parser functions
+  - `src/config/validator.ts` - Health check and validation
+  - `src/config.ts` - Main configuration (refactored to use new modules)
+
 ## [1.2.0] - 2025-11-21
 
 ### Added
+
 - **Tool Profiles System** - Reduce token usage by loading only the tools you need
   - Three profiles: `minimal` (5 tools), `standard` (10 tools), `full` (16 tools)
   - Persistent configuration via `~/.config/notebooklm-mcp/settings.json`
@@ -20,12 +76,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `npx notebooklm-mcp config reset` - Reset to defaults
 
 ### Changed
+
 - **Modularized Codebase** - Improved maintainability and code organization
   - Split monolithic `src/tools/index.ts` into `definitions.ts` and `handlers.ts`
   - Extracted resource handling into dedicated `ResourceHandlers` class
   - Cleaner separation of concerns throughout the codebase
 
 ### Fixed
+
 - **LibreChat Compatibility** - Fixed "Server does not support completions" error
   - Added `prompts: {}` and `logging: {}` to server capabilities
   - Resolves GitHub Issue #3 for LibreChat integration
@@ -39,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.2] - 2025-10-19
 
 ### Changed
+
 - **README Documentation** - Added Claude Code Skill reference
   - New badge linking to [notebooklm-skill](https://github.com/PleasePrompto/notebooklm-skill) repository
   - Added prominent callout section explaining Claude Code Skill availability
@@ -49,12 +108,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.1] - 2025-10-18
 
 ### Fixed
+
 - **Binary executable permissions** - Fixed "Permission denied" error when running via npx
   - Added `postbuild` script that automatically runs `chmod +x dist/index.js`
   - Ensures binary has executable permissions after compilation
   - Fixes installation issue where users couldn't run the MCP server
 
 ### Repository
+
 - **Added package-lock.json** - Committed lockfile to repository for reproducible builds
   - Ensures consistent dependency versions across all environments
   - Improves contributor experience with identical development setup
@@ -64,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2025-10-18
 
 ### Added
+
 - **Deep Cleanup Tool** - Comprehensive system cleanup for fresh NotebookLM MCP installations
   - Scans entire system for ALL NotebookLM files (installation data, caches, logs, temp files)
   - Finds hidden files in NPM cache, Claude CLI logs, editor logs, system trash, temp backups
@@ -76,6 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changelog badge and link in README.md
 
 ### Changed
+
 - **Configuration System Simplified** - No config files needed anymore!
   - `config.json` completely removed - works out of the box with sensible defaults
   - Settings passed as tool parameters (`browser_options`) or environment variables
@@ -101,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README.md updated to reflect config-less architecture
 
 ### Fixed
+
 - **Critical: envPaths() default suffix bug** - `env-paths` library appends `-nodejs` suffix by default
   - All paths were incorrectly created with `-nodejs` suffix
   - Fix: Explicitly pass `{suffix: ""}` to disable default behavior
@@ -135,6 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Files changed**: `src/tools/index.ts`, `src/session/shared-context-manager.ts`
 
 ### Removed
+
 - Empty postinstall scripts (cleaner codebase)
   - Deleted: `src/postinstall.ts`, `dist/postinstall.js`, type definitions
   - Removed: `postinstall` npm script from package.json
@@ -143,36 +208,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.5] - 2025-10-17
 
 ### Changed
+
 - Documentation improvements
 - Updated README installation instructions
 
 ## [1.0.4] - 2025-10-17
 
 ### Changed
+
 - Enhanced usage examples in documentation
 - Fixed formatting in usage guide
 
 ## [1.0.3] - 2025-10-16
 
 ### Changed
+
 - Improved troubleshooting guide
 - Added common issues and solutions
 
 ## [1.0.2] - 2025-10-16
 
 ### Fixed
+
 - Fixed typos in documentation
 - Clarified authentication flow
 
 ## [1.0.1] - 2025-10-16
 
 ### Changed
+
 - Enhanced README with better examples
 - Added more detailed setup instructions
 
 ## [1.0.0] - 2025-10-16
 
 ### Added
+
 - Initial release
 - NotebookLM integration via Model Context Protocol (MCP)
 - Session-based conversations with Gemini 2.5
