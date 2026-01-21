@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Required for tsyringe dependency injection
+import "reflect-metadata";
+
 /**
  * NotebookLM MCP Server
  *
@@ -41,12 +44,15 @@ import {
 import { AuthManager } from "./auth/auth-manager.js";
 import { SessionManager } from "./session/session-manager.js";
 import { NotebookLibrary } from "./library/notebook-library.js";
-import { ToolHandlers, buildToolDefinitions } from "./tools/index.js";
+import { ToolHandlers, ToolRouter, buildToolDefinitions } from "./tools/index.js";
 import { ResourceHandlers } from "./resources/resource-handlers.js";
 import { SettingsManager } from "./utils/settings-manager.js";
 import { CliHandler } from "./utils/cli-handler.js";
 import { CONFIG } from "./config.js";
 import { log } from "./utils/logger.js";
+
+// New Architecture Components
+import { logFeatureFlags, isEnabled, EventBus, createEventBus } from "./core/index.js";
 
 /**
  * Main MCP Server Class
@@ -57,11 +63,20 @@ class NotebookLMMCPServer {
   private sessionManager: SessionManager;
   private library: NotebookLibrary;
   private toolHandlers: ToolHandlers;
+  private toolRouter: ToolRouter;
   private resourceHandlers: ResourceHandlers;
   private settingsManager: SettingsManager;
   private toolDefinitions: Tool[];
 
+  // New Architecture Components (enabled via feature flags)
+  private eventBus?: EventBus;
+
   constructor() {
+    // Initialize EventBus if feature flag enabled
+    if (isEnabled("USE_EVENT_BUS")) {
+      this.eventBus = createEventBus();
+      log.info("🔔 EventBus enabled (new architecture)");
+    }
     // Initialize MCP Server
     this.server = new Server(
       {
@@ -92,6 +107,7 @@ class NotebookLMMCPServer {
       this.authManager,
       this.library
     );
+    this.toolRouter = new ToolRouter(this.toolHandlers);
     this.resourceHandlers = new ResourceHandlers(this.library);
 
     // Build and Filter tool definitions
@@ -152,140 +168,19 @@ class NotebookLMMCPServer {
       };
 
       try {
-        let result;
+        // Route tool call through the router
+        const result = await this.toolRouter.route(
+          name,
+          args as Record<string, unknown>,
+          sendProgress
+        );
 
-        switch (name) {
-          case "ask_question":
-            result = await this.toolHandlers.handleAskQuestion(
-              args as {
-                question: string;
-                session_id?: string;
-                notebook_id?: string;
-                notebook_url?: string;
-                show_browser?: boolean;
-              },
-              sendProgress
-            );
-            break;
-
-          case "add_notebook":
-            result = await this.toolHandlers.handleAddNotebook(
-              args as {
-                url: string;
-                name: string;
-                description: string;
-                topics: string[];
-                content_types?: string[];
-                use_cases?: string[];
-                tags?: string[];
-              }
-            );
-            break;
-
-          case "list_notebooks":
-            result = await this.toolHandlers.handleListNotebooks();
-            break;
-
-          case "get_notebook":
-            result = await this.toolHandlers.handleGetNotebook(
-              args as { id: string }
-            );
-            break;
-
-          case "select_notebook":
-            result = await this.toolHandlers.handleSelectNotebook(
-              args as { id: string }
-            );
-            break;
-
-          case "update_notebook":
-            result = await this.toolHandlers.handleUpdateNotebook(
-              args as {
-                id: string;
-                name?: string;
-                description?: string;
-                topics?: string[];
-                content_types?: string[];
-                use_cases?: string[];
-                tags?: string[];
-                url?: string;
-              }
-            );
-            break;
-
-          case "remove_notebook":
-            result = await this.toolHandlers.handleRemoveNotebook(
-              args as { id: string }
-            );
-            break;
-
-          case "search_notebooks":
-            result = await this.toolHandlers.handleSearchNotebooks(
-              args as { query: string }
-            );
-            break;
-
-          case "get_library_stats":
-            result = await this.toolHandlers.handleGetLibraryStats();
-            break;
-
-          case "list_sessions":
-            result = await this.toolHandlers.handleListSessions();
-            break;
-
-          case "close_session":
-            result = await this.toolHandlers.handleCloseSession(
-              args as { session_id: string }
-            );
-            break;
-
-          case "reset_session":
-            result = await this.toolHandlers.handleResetSession(
-              args as { session_id: string }
-            );
-            break;
-
-          case "get_health":
-            result = await this.toolHandlers.handleGetHealth();
-            break;
-
-          case "setup_auth":
-            result = await this.toolHandlers.handleSetupAuth(
-              args as { show_browser?: boolean },
-              sendProgress
-            );
-            break;
-
-          case "re_auth":
-            result = await this.toolHandlers.handleReAuth(
-              args as { show_browser?: boolean },
-              sendProgress
-            );
-            break;
-
-          case "cleanup_data":
-            result = await this.toolHandlers.handleCleanupData(
-              args as { confirm: boolean }
-            );
-            break;
-
-          default:
-            log.error(`❌ [MCP] Unknown tool: ${name}`);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: JSON.stringify(
-                    {
-                      success: false,
-                      error: `Unknown tool: ${name}`,
-                    },
-                    null,
-                    2
-                  ),
-                },
-              ],
-            };
+        // Publish success event if EventBus enabled
+        if (this.eventBus) {
+          await this.eventBus.publish("system:warning", {
+            message: `Tool ${name} completed successfully`,
+            context: "tool_call",
+          });
         }
 
         // Return result
@@ -301,6 +196,14 @@ class NotebookLMMCPServer {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         log.error(`❌ [MCP] Tool execution error: ${errorMessage}`);
+
+        // Publish error event if EventBus enabled
+        if (this.eventBus) {
+          await this.eventBus.publish("system:error", {
+            error: errorMessage,
+            context: `tool_call:${name}`,
+          });
+        }
 
         return {
           content: [
@@ -421,12 +324,15 @@ async function main() {
   // Print banner
   console.error("╔══════════════════════════════════════════════════════════╗");
   console.error("║                                                          ║");
-  console.error("║           NotebookLM MCP Server v1.0.0                   ║");
+  console.error("║           NotebookLM MCP Server v1.2.1                   ║");
   console.error("║                                                          ║");
   console.error("║   Chat with Gemini 2.5 through NotebookLM via MCP       ║");
   console.error("║                                                          ║");
   console.error("╚══════════════════════════════════════════════════════════╝");
   console.error("");
+
+  // Log feature flags status
+  logFeatureFlags();
 
   try {
     const server = new NotebookLMMCPServer();

@@ -407,9 +407,177 @@ export SESSION_TIMEOUT=900     # 会话超时（秒）
 
 </details>
 
+<details>
+<summary><b>新架构特性开关</b></summary>
+
+v1.2.1 引入了六边形架构重构，通过特性开关可启用新组件：
+
+| 环境变量 | 描述 | 默认 |
+|----------|------|------|
+| `FF_USE_NEW_ARCHITECTURE` | 启用所有新架构组件 | `false` |
+| `FF_USE_EVENT_BUS` | 事件总线（松耦合） | `false` |
+| `FF_USE_AUTH_STATE_MACHINE` | 认证状态机 | `false` |
+| `FF_USE_SESSION_ACTOR` | Actor 模型（顺序消息处理） | `false` |
+| `FF_USE_RESPONSE_OBSERVER` | MutationObserver（替代轮询） | `false` |
+
+**启用全部新特性：**
+```bash
+FF_USE_NEW_ARCHITECTURE=true npx sumulige-notebooklm-mcp@latest
+```
+
+**逐个启用：**
+```bash
+FF_USE_SESSION_ACTOR=true FF_USE_RESPONSE_OBSERVER=true npx sumulige-notebooklm-mcp@latest
+```
+
+</details>
+
 ---
 
-## 第八部分：更多文档
+## 第八部分：HTTP API（可选）
+
+除了 MCP 协议，NotebookLM MCP 还提供 **REST API** 接口，可用于：
+
+- Web 应用集成
+- 自定义客户端开发
+- 微服务架构
+- 自动化脚本
+
+### 启动 HTTP 服务器
+
+```typescript
+import { ToolHandlers } from "sumulige-notebooklm-mcp";
+import { createHttpAdapter } from "sumulige-notebooklm-mcp/adapters";
+
+const adapter = createHttpAdapter(toolHandlers, {
+  port: 3000,
+  prefix: "/api/v1",
+  cors: { origin: true }
+});
+
+await adapter.start();
+// 服务器运行在 http://localhost:3000
+```
+
+### API 端点一览
+
+| 方法 | 端点 | 描述 |
+|------|------|------|
+| `GET` | `/health` | 健康检查 |
+| `POST` | `/api/v1/ask` | 向 NotebookLM 提问 |
+| `GET` | `/api/v1/sessions` | 列出所有会话 |
+| `DELETE` | `/api/v1/sessions/:id` | 关闭会话 |
+| `POST` | `/api/v1/sessions/:id/reset` | 重置会话 |
+| `GET` | `/api/v1/notebooks` | 列出笔记本库 |
+| `POST` | `/api/v1/notebooks` | 添加笔记本 |
+| `GET` | `/api/v1/notebooks/:id` | 获取笔记本详情 |
+| `PUT` | `/api/v1/notebooks/:id` | 更新笔记本 |
+| `DELETE` | `/api/v1/notebooks/:id` | 删除笔记本 |
+| `POST` | `/api/v1/notebooks/:id/select` | 设为活动笔记本 |
+| `GET` | `/api/v1/library/stats` | 获取库统计 |
+| `POST` | `/api/v1/auth/setup` | 设置认证 |
+| `POST` | `/api/v1/auth/reauth` | 重新认证 |
+| `POST` | `/api/v1/cleanup` | 清理数据 |
+
+### 使用示例
+
+**提问：**
+```bash
+curl -X POST http://localhost:3000/api/v1/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "这个库怎么初始化？"}'
+```
+
+**流式进度（SSE）：**
+```bash
+curl -X POST http://localhost:3000/api/v1/ask \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"question": "详细解释认证流程"}'
+```
+
+**列出笔记本：**
+```bash
+curl http://localhost:3000/api/v1/notebooks
+```
+
+### 配置选项
+
+```typescript
+interface HttpAdapterConfig {
+  port: number;           // 监听端口
+  host?: string;          // 主机地址，默认 "0.0.0.0"
+  prefix?: string;        // API 前缀，默认 "/api/v1"
+  cors?: {
+    origin?: string | string[] | boolean;  // CORS 来源
+    credentials?: boolean;                  // 允许凭据
+  };
+}
+```
+
+### 流式响应（Streaming）
+
+v1.2.2 新增流式响应功能，实现类似 ChatGPT 的逐字输出体验。
+
+**特性：**
+- 🌊 **逐字输出** - 响应文本实时流式返回
+- 🔒 **安全措施** - 内置间隔和随机抖动，模拟人类行为
+- ⚙️ **可配置** - 支持自定义块大小、间隔时间
+
+**使用方式：**
+
+```typescript
+// 通过 handleAskQuestion 启用流式
+const result = await handlers.handleAskQuestion({
+  question: "这个库怎么使用？",
+  streaming: true,
+  streaming_options: {
+    min_interval_ms: 100,  // 最小发送间隔
+    max_jitter_ms: 50,     // 随机抖动范围
+    chunk_size: 0          // 0 = 逐字，>0 = 按块
+  }
+}, sendProgress, (chunk, fullText) => {
+  // 每收到新内容时调用
+  process.stdout.write(chunk);
+});
+
+// 或直接使用 session
+const result = await session.askWithStreaming(
+  "解释认证流程",
+  (chunk, fullText) => console.log(chunk),
+  { minIntervalMs: 100 }
+);
+```
+
+**流式选项：**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `min_interval_ms` | number | 100 | 两次发送之间的最小间隔（毫秒） |
+| `max_jitter_ms` | number | 50 | 随机抖动范围（毫秒） |
+| `chunk_size` | number | 0 | 块大小（0 = 逐字符，>0 = 按指定字符数） |
+
+**返回结果：**
+
+```typescript
+interface StreamingResult {
+  success: boolean;
+  response?: string;      // 完整响应文本
+  error?: string;
+  durationMs: number;     // 总耗时
+  totalChars?: number;    // 总字符数
+  chunkCount?: number;    // 发送的块数
+}
+```
+
+**安全说明：**
+- 内置最小 100ms 间隔防止请求过于频繁
+- 随机抖动模拟人类行为，降低被检测风险
+- 逐字模式下每字符 10-30ms 随机延迟
+
+---
+
+## 第九部分：更多文档
 
 | 文档 | 描述 | 链接 |
 |------|------|------|
@@ -417,6 +585,8 @@ export SESSION_TIMEOUT=900     # 会话超时（秒）
 | 使用指南 | 高级用法、工作流、最佳实践、模式 | [docs/usage-guide.md](./docs/usage-guide.md) |
 | 工具参考 | 完整 MCP 工具 API 文档、参数说明 | [docs/tools.md](./docs/tools.md) |
 | 配置说明 | 环境变量、运行时配置、工具配置 | [docs/configuration.md](./docs/configuration.md) |
+| HTTP API | REST API 端点和使用说明 | [README.md#第八部分http-api可选](#第八部分http-api可选) |
+| 流式响应 | 逐字输出、配置选项、安全措施 | [README.md#流式响应streaming](#流式响应streaming) |
 | 问题排查 | 常见问题和解决方案 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 
 ---

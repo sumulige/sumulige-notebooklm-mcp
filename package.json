@@ -42,14 +42,21 @@
     "docs"
   ],
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "async-lock": "^1.4.1",
     "dotenv": "^16.4.0",
     "env-paths": "^3.0.0",
+    "eventemitter3": "^5.0.4",
+    "fastify": "^5.7.1",
     "globby": "^14.1.0",
     "patchright": "^1.48.2",
+    "reflect-metadata": "^0.2.2",
+    "tsyringe": "^4.10.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
+    "@types/async-lock": "^1.4.2",
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^4.0.17",
     "tsx": "^4.7.0",

@@ -33,6 +33,9 @@ Thumbs.db
 npm-debug.log*
 screenshots/
 
+# Test coverage
+coverage/
+
 # Archives / local notes
 *.tar.gz
 mcp-add-command.txt

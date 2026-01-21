@@ -9,6 +9,10 @@
  * - Resource limits (max concurrent sessions)
  * - Shared PERSISTENT browser fingerprint (ONE context for all sessions)
  *
+ * New Architecture (via feature flags):
+ * - SessionActor for sequential message processing
+ * - EventBus integration for domain events
+ *
  * Based on the Python implementation from session_manager.py
  */
 
@@ -20,25 +24,55 @@ import { log } from "../utils/logger.js";
 import type { SessionInfo } from "../types.js";
 import { randomBytes } from "crypto";
 
+// New Architecture Components
+import { isEnabled, EventBus, createEventBus } from "../core/index.js";
+import { ActorSessionAdapter, createActorSession } from "./actor-session-adapter.js";
+
+/**
+ * Session type - can be either BrowserSession or ActorSessionAdapter
+ */
+type ManagedSession = BrowserSession | ActorSessionAdapter;
+
 export class SessionManager {
   private authManager: AuthManager;
   private sharedContextManager: SharedContextManager;
-  private sessions: Map<string, BrowserSession> = new Map();
+  private sessions: Map<string, ManagedSession> = new Map();
   private maxSessions: number;
   private sessionTimeout: number;
   private cleanupInterval?: NodeJS.Timeout;
 
-  constructor(authManager: AuthManager) {
+  // New Architecture Components
+  private eventBus?: EventBus;
+  private useActorModel: boolean;
+
+  constructor(authManager: AuthManager, eventBus?: EventBus) {
     this.authManager = authManager;
     this.sharedContextManager = new SharedContextManager(authManager);
     this.maxSessions = CONFIG.maxSessions;
     this.sessionTimeout = CONFIG.sessionTimeout;
+
+    // Check feature flag for Actor model
+    this.useActorModel = isEnabled("USE_SESSION_ACTOR");
+
+    // Use provided EventBus or create one if USE_EVENT_BUS is enabled
+    if (eventBus) {
+      this.eventBus = eventBus;
+    } else if (isEnabled("USE_EVENT_BUS")) {
+      this.eventBus = createEventBus();
+    }
 
     log.info("🎯 SessionManager initialized");
     log.info(`  Max sessions: ${this.maxSessions}`);
     log.info(
       `  Timeout: ${this.sessionTimeout}s (${Math.floor(this.sessionTimeout / 60)} minutes)`
     );
+
+    if (this.useActorModel) {
+      log.info("  🎭 Actor model: ENABLED (new architecture)");
+    }
+    if (this.eventBus) {
+      log.info("  🔔 EventBus: ENABLED");
+    }
 
     const cleanupIntervalSeconds = Math.max(
       60,
@@ -70,7 +104,7 @@ export class SessionManager {
     sessionId?: string,
     notebookUrl?: string,
     overrideHeadless?: boolean
-  ): Promise<BrowserSession> {
+  ): Promise<ManagedSession> {
     // Determine target notebook URL
     const targetUrl = (notebookUrl || CONFIG.notebookUrl || "").trim();
     if (!targetUrl) {
@@ -129,17 +163,43 @@ export class SessionManager {
     if (overrideHeadless !== undefined) {
       log.info(`  Show browser: ${overrideHeadless}`);
     }
+    if (this.useActorModel) {
+      log.info(`  🎭 Using Actor model`);
+    }
     try {
       // Ensure the shared context exists (ONE fingerprint for all sessions!)
       await this.sharedContextManager.getOrCreateContext(overrideHeadless);
 
-      // Create and initialize session
-      const session = new BrowserSession(
-        sessionId,
-        this.sharedContextManager,
-        this.authManager,
-        targetUrl
-      );
+      // Create and initialize session (using Actor model if enabled)
+      let session: ManagedSession;
+
+      if (this.useActorModel) {
+        // New architecture: Use ActorSessionAdapter
+        session = createActorSession(
+          sessionId,
+          this.sharedContextManager,
+          this.authManager,
+          targetUrl,
+          this.eventBus
+        );
+
+        // Publish session created event
+        if (this.eventBus) {
+          await this.eventBus.publish("session:created", {
+            sessionId,
+            notebookUrl: targetUrl,
+          });
+        }
+      } else {
+        // Legacy: Use BrowserSession directly
+        session = new BrowserSession(
+          sessionId,
+          this.sharedContextManager,
+          this.authManager,
+          targetUrl
+        );
+      }
+
       await session.init();
 
       this.sessions.set(sessionId, session);
@@ -156,7 +216,7 @@ export class SessionManager {
   /**
    * Get an existing session by ID
    */
-  getSession(sessionId: string): BrowserSession | null {
+  getSession(sessionId: string): ManagedSession | null {
     return this.sessions.get(sessionId) || null;
   }
 
@@ -172,6 +232,14 @@ export class SessionManager {
     const session = this.sessions.get(sessionId)!;
     await session.close();
     this.sessions.delete(sessionId);
+
+    // Publish session closed event
+    if (this.eventBus) {
+      await this.eventBus.publish("session:closed", {
+        sessionId,
+        reason: "manual close",
+      });
+    }
 
     log.success(
       `✅ Session ${sessionId} closed (${this.sessions.size}/${this.maxSessions} active)`

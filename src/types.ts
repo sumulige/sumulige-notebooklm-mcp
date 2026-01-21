@@ -84,6 +84,16 @@ export type ProgressCallback = (
 ) => Promise<void>;
 
 /**
+ * Streaming callback for character-by-character response delivery
+ * @param chunk The new text chunk (character or group of characters)
+ * @param fullText The complete text received so far
+ */
+export type ResponseStreamCallback = (
+  chunk: string,
+  fullText: string
+) => void | Promise<void>;
+
+/**
  * Global state for the server
  */
 export interface ServerState {

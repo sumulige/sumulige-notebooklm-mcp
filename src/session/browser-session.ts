@@ -19,8 +19,10 @@ import { AuthManager } from "../auth/auth-manager.js";
 import { humanType, randomDelay } from "../utils/stealth-utils.js";
 import {
   waitForLatestAnswer,
+  waitForLatestAnswerWithStreaming,
   snapshotAllResponses,
 } from "../utils/page-utils.js";
+import type { StreamCallback, StreamingResult } from "../utils/page-utils.js";
 import { CONFIG } from "../config.js";
 import { log } from "../utils/logger.js";
 import type { SessionInfo, ProgressCallback } from "../types.js";
@@ -456,6 +458,154 @@ export class BrowserSession {
         }
       }
       log.error(`❌ [${this.sessionId}] Failed to ask question: ${msg}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Ask a question with streaming response
+   *
+   * Like ask(), but streams the response character-by-character
+   * via the onChunk callback for a ChatGPT-like experience.
+   */
+  async askWithStreaming(
+    question: string,
+    onChunk: StreamCallback,
+    options?: {
+      sendProgress?: ProgressCallback;
+      minIntervalMs?: number;
+      maxJitterMs?: number;
+      chunkSize?: number;
+    }
+  ): Promise<StreamingResult> {
+    const {
+      sendProgress,
+      minIntervalMs = 100,
+      maxJitterMs = 50,
+      chunkSize = 0,
+    } = options ?? {};
+
+    const askOnce = async (): Promise<StreamingResult> => {
+      if (!this.initialized || !this.page || this.isPageClosedSafe()) {
+        log.warning(`  ℹ️  Session not initialized or page missing → re-initializing...`);
+        await this.init();
+      }
+
+      log.info(`💬🌊 [${this.sessionId}] Asking (streaming): "${question.substring(0, 100)}..."`);
+      const page = this.page!;
+
+      // Ensure authenticated
+      await sendProgress?.("Verifying authentication...", 2, 5);
+      const isAuth = await this.authManager.validateCookiesExpiry(this.context);
+      if (!isAuth) {
+        log.warning(`  🔑 Session expired, re-authenticating...`);
+        await sendProgress?.("Re-authenticating session...", 2, 5);
+        const reAuthSuccess = await this.ensureAuthenticated();
+        if (!reAuthSuccess) {
+          return {
+            success: false,
+            error: "Failed to re-authenticate session",
+            durationMs: 0,
+          };
+        }
+      }
+
+      // Snapshot existing responses
+      log.info(`  📸 Snapshotting existing responses...`);
+      const existingResponses = await snapshotAllResponses(page);
+      log.success(`  ✅ Captured ${existingResponses.length} existing responses`);
+
+      // Find chat input
+      const inputSelector = await this.findChatInput();
+      if (!inputSelector) {
+        return {
+          success: false,
+          error: "Could not find visible chat input element",
+          durationMs: 0,
+        };
+      }
+
+      log.info(`  ⌨️  Typing question with human-like behavior...`);
+      await sendProgress?.("Typing question with human-like behavior...", 2, 5);
+      await humanType(page, inputSelector, question, {
+        withTypos: true,
+        wpm: Math.max(CONFIG.typingWpmMin, CONFIG.typingWpmMax),
+      });
+
+      await randomDelay(500, 1000);
+
+      // Submit
+      log.info(`  📤 Submitting question...`);
+      await sendProgress?.("Submitting question...", 3, 5);
+      await page.keyboard.press("Enter");
+
+      await randomDelay(1000, 1500);
+
+      // Wait for streaming response
+      log.info(`  🌊 Waiting for streaming response...`);
+      await sendProgress?.("Streaming response from NotebookLM...", 3, 5);
+
+      const result = await waitForLatestAnswerWithStreaming(page, onChunk, {
+        question,
+        timeoutMs: 120000,
+        ignoreTexts: existingResponses,
+        debug: false,
+        minIntervalMs,
+        maxJitterMs,
+        chunkSize,
+      });
+
+      if (!result.success || !result.response) {
+        return {
+          success: false,
+          error: result.error ?? "No response received",
+          durationMs: result.durationMs,
+          totalChars: result.totalChars,
+          chunkCount: result.chunkCount,
+        };
+      }
+
+      // Check rate limit
+      log.info(`  🔍 Checking for rate limit errors...`);
+      if (await this.detectRateLimitError()) {
+        throw new RateLimitError(
+          "NotebookLM rate limit reached (50 queries/day for free accounts)"
+        );
+      }
+
+      // Update stats
+      this.messageCount++;
+      this.updateActivity();
+
+      log.success(
+        `✅ [${this.sessionId}] Streaming complete (${result.response.length} chars, ${result.chunkCount} chunks)`
+      );
+
+      return result;
+    };
+
+    try {
+      return await askOnce();
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      if (/has been closed|Target .* closed|Browser has been closed|Context .* closed/i.test(msg)) {
+        log.warning(`  ♻️  Detected closed page/context. Recovering session and retrying...`);
+        try {
+          this.initialized = false;
+          if (this.page) { try { await this.page.close(); } catch {} }
+          this.page = null;
+          await this.init();
+          return await askOnce();
+        } catch (e2) {
+          log.error(`❌ Recovery failed: ${e2}`);
+          return {
+            success: false,
+            error: String(e2),
+            durationMs: 0,
+          };
+        }
+      }
+      log.error(`❌ [${this.sessionId}] Failed to ask question (streaming): ${msg}`);
       throw error;
     }
   }

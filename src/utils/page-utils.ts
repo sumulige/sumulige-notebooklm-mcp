@@ -7,11 +7,95 @@
  * - Detect placeholders and loading states
  * - Snapshot existing responses for comparison
  *
+ * New Architecture (via feature flags):
+ * - ResponseObserver for MutationObserver-based detection
+ *
  * Based on the Python implementation from page_utils.py
  */
 
 import type { Page } from "patchright";
 import { log } from "./logger.js";
+
+// New Architecture Components
+import { isEnabled } from "../core/index.js";
+import { ResponseObserver, createResponseObserver } from "../adapters/index.js";
+import type { StreamCallback, StreamingResult } from "../adapters/index.js";
+import type { IPage } from "../core/ports/browser-port.js";
+
+// Re-export StreamCallback for external use
+export type { StreamCallback, StreamingResult };
+
+// Singleton ResponseObserver instance (reused across calls)
+let observerInstance: ResponseObserver | null = null;
+
+/**
+ * Get or create ResponseObserver instance
+ */
+function getResponseObserver(): ResponseObserver {
+  if (!observerInstance) {
+    observerInstance = createResponseObserver();
+    log.info("🔬 ResponseObserver created (MutationObserver mode)");
+  }
+  return observerInstance;
+}
+
+/**
+ * Adapt Patchright Page to IPage interface
+ */
+function adaptPage(page: Page): IPage {
+  return {
+    goto: async (url, options) => {
+      await page.goto(url, options as Parameters<typeof page.goto>[1]);
+    },
+    waitForSelector: async (selector, options) => {
+      await page.waitForSelector(selector, options as Parameters<typeof page.waitForSelector>[1]);
+    },
+    waitForNavigation: async (options) => {
+      await page.waitForNavigation(options as Parameters<typeof page.waitForNavigation>[0]);
+    },
+    click: async (selector) => {
+      await page.click(selector);
+    },
+    type: async (selector, text, options) => {
+      await page.type(selector, text, options as Parameters<typeof page.type>[2]);
+    },
+    fill: async (selector, value) => {
+      await page.fill(selector, value);
+    },
+    evaluate: async <R>(script: string | (() => R)) => {
+      return page.evaluate(script as string) as Promise<R>;
+    },
+    querySelector: async (selector) => {
+      const el = await page.$(selector);
+      return el !== null;
+    },
+    textContent: async (selector) => {
+      return page.textContent(selector);
+    },
+    innerText: async (selector) => {
+      return page.innerText(selector);
+    },
+    waitForTimeout: async (ms) => {
+      await page.waitForTimeout(ms);
+    },
+    screenshot: async () => {
+      return page.screenshot();
+    },
+    url: () => page.url(),
+    close: async () => {
+      await page.close();
+    },
+    isClosed: () => {
+      // Patchright doesn't have a direct isClosed method, check via try-catch
+      try {
+        page.url(); // This throws if page is closed
+        return false;
+      } catch {
+        return true;
+      }
+    },
+  };
+}
 
 // ============================================================================
 // Constants
@@ -138,7 +222,7 @@ export async function countResponseElements(page: Page): Promise<number> {
  * Wait for a new assistant response with streaming detection
  *
  * This function:
- * 1. Polls the page for new response text
+ * 1. Polls the page for new response text (or uses MutationObserver if enabled)
  * 2. Detects streaming (text changes) vs. complete (text stable)
  * 3. Requires text to be stable for 3 consecutive polls before returning
  * 4. Ignores placeholders, question echoes, and known responses
@@ -164,6 +248,34 @@ export async function waitForLatestAnswer(
     ignoreTexts = [],
     debug = false,
   } = options;
+
+  // Use ResponseObserver if feature flag enabled
+  if (isEnabled("USE_RESPONSE_OBSERVER")) {
+    log.info("🔬 Using ResponseObserver (MutationObserver mode)");
+    const observer = getResponseObserver();
+    const adaptedPage = adaptPage(page);
+
+    const result = await observer.waitForResponse(adaptedPage, {
+      timeoutMs,
+      stabilityDelayMs: 500, // Equivalent to 3 polls at 166ms each
+      ignoreTexts: ignoreTexts as readonly string[],
+      question,
+      debug,
+    });
+
+    if (result.success && result.response) {
+      log.success(`✅ ResponseObserver found answer (${result.response.length} chars, ${result.durationMs}ms)`);
+      return result.response;
+    }
+
+    if (result.error) {
+      log.warning(`⚠️ ResponseObserver: ${result.error}`);
+    }
+
+    return null;
+  }
+
+  // Legacy polling mode
 
   const deadline = Date.now() + timeoutMs;
   const sanitizedQuestion = question.trim().toLowerCase();
@@ -269,6 +381,67 @@ export async function waitForLatestAnswer(
     log.debug(`⏱️ [DEBUG] Timeout after ${pollCount} polls`);
   }
   return null;
+}
+
+/**
+ * Wait for a response with streaming output
+ *
+ * Like waitForLatestAnswer, but emits text chunks as they arrive
+ * via the onChunk callback. This provides a ChatGPT-like streaming experience.
+ *
+ * @param page Playwright page instance
+ * @param onChunk Callback for each text chunk (char or chunk, full text so far)
+ * @param options Options for waiting
+ * @returns StreamingResult with final response and stats
+ */
+export async function waitForLatestAnswerWithStreaming(
+  page: Page,
+  onChunk: StreamCallback,
+  options: {
+    question?: string;
+    timeoutMs?: number;
+    ignoreTexts?: string[];
+    debug?: boolean;
+    minIntervalMs?: number;
+    maxJitterMs?: number;
+    chunkSize?: number;
+  } = {}
+): Promise<StreamingResult> {
+  const {
+    question = "",
+    timeoutMs = 120000,
+    ignoreTexts = [],
+    debug = false,
+    minIntervalMs = 100,
+    maxJitterMs = 50,
+    chunkSize = 0,
+  } = options;
+
+  const observer = getResponseObserver();
+  const adaptedPage = adaptPage(page);
+
+  log.info("🌊 Using streaming response mode");
+
+  const result = await observer.streamResponse(adaptedPage, onChunk, {
+    timeoutMs,
+    stabilityDelayMs: 500,
+    ignoreTexts: ignoreTexts as readonly string[],
+    question,
+    debug,
+    minIntervalMs,
+    maxJitterMs,
+    chunkSize,
+  });
+
+  if (result.success && result.response) {
+    log.success(
+      `✅ Streaming complete (${result.response.length} chars, ${result.chunkCount} chunks, ${result.durationMs}ms)`
+    );
+  } else if (result.error) {
+    log.warning(`⚠️ Streaming error: ${result.error}`);
+  }
+
+  return result;
 }
 
 /**
@@ -473,4 +646,5 @@ export default {
   snapshotAllResponses,
   countResponseElements,
   waitForLatestAnswer,
+  waitForLatestAnswerWithStreaming,
 };
